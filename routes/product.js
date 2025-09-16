@@ -1,3 +1,4 @@
+// routes/product.js
 const express = require('express');
 const Product = require('../models/Product');
 const auth = require('../middleware/auth');
@@ -27,7 +28,6 @@ function safeJsonParse(value, fallback) {
   try {
     if (!value) return fallback;
     const parsed = JSON.parse(value);
-    // handle case: ["S, M, XL"] → split into ["S","M","XL"]
     if (Array.isArray(parsed) && parsed.length === 1 && parsed[0].includes(',')) {
       return parsed[0].split(',').map(s => s.trim());
     }
@@ -57,7 +57,7 @@ router.post('/', auth, isAdmin, upload.single('image'), async (req, res) => {
       quantity: Number(quantity) || 0,
       sizes: safeJsonParse(sizes, []),
       discount: Number(discount) || 0,
-      type // ✅ include type
+      type
     });
 
     await product.save();
@@ -68,7 +68,7 @@ router.post('/', auth, isAdmin, upload.single('image'), async (req, res) => {
   }
 });
 
-// ✅ Update product
+// ✅ Update product (only once)
 router.put('/:id', auth, isAdmin, upload.single('image'), async (req, res) => {
   try {
     const { title, description, price, category, featured, features, quantity, sizes, discount, type } = req.body;
@@ -83,7 +83,7 @@ router.put('/:id', auth, isAdmin, upload.single('image'), async (req, res) => {
       quantity: Number(quantity) || 0,
       sizes: safeJsonParse(sizes, []),
       discount: Number(discount) || 0,
-      type // ✅ include type
+      type
     };
 
     if (req.file) {
@@ -93,13 +93,13 @@ router.put('/:id', auth, isAdmin, upload.single('image'), async (req, res) => {
     }
 
     const updated = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    if (!updated) return res.status(404).json({ message: 'Not found' });
     res.json(updated);
   } catch (err) {
     console.error('❌ Error updating product:', err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
-
 
 // ✅ Get all products
 router.get('/', async (req, res) => {
@@ -119,37 +119,6 @@ router.get('/:id', async (req, res) => {
     res.json(p);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// ✅ Update product
-router.put('/:id', auth, isAdmin, upload.single('image'), async (req, res) => {
-  try {
-    const { title, description, price, category, featured, features, quantity, sizes, discount } = req.body;
-
-    const updateData = {
-      title,
-      description,
-      price: Number(price) || 0,
-      category,
-      featured: featured === 'true' || featured === true,
-      features: safeJsonParse(features, []),
-      quantity: Number(quantity) || 0,
-      sizes: safeJsonParse(sizes, []),
-      discount: Number(discount) || 0
-    };
-
-    if (req.file) {
-      updateData.imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-    } else if (req.body.imageUrl) {
-      updateData.imageUrl = req.body.imageUrl;
-    }
-
-    const updated = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
-    res.json(updated);
-  } catch (err) {
-    console.error('❌ Error updating product:', err);
-    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
