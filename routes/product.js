@@ -8,13 +8,11 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// 🔹 Ensure uploads folder exists
 const uploadDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
 
-// 🔹 Multer setup
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
@@ -23,7 +21,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// 🔹 Helper: safely parse JSON / arrays
 function safeJsonParse(value, fallback) {
   try {
     if (!value) return fallback;
@@ -37,7 +34,6 @@ function safeJsonParse(value, fallback) {
   }
 }
 
-// ✅ Create product
 router.post('/', auth, isAdmin, upload.single('image'), async (req, res) => {
   try {
     const { title, description, price, category, featured, features, quantity, sizes, discount, type } = req.body;
@@ -68,7 +64,6 @@ router.post('/', auth, isAdmin, upload.single('image'), async (req, res) => {
   }
 });
 
-// ✅ Update product (only once)
 router.put('/:id', auth, isAdmin, upload.single('image'), async (req, res) => {
   try {
     const { title, description, price, category, featured, features, quantity, sizes, discount, type } = req.body;
@@ -101,7 +96,6 @@ router.put('/:id', auth, isAdmin, upload.single('image'), async (req, res) => {
   }
 });
 
-// ✅ Get all products
 router.get('/', async (req, res) => {
   try {
     const products = await Product.find().sort({ createdAt: -1 });
@@ -111,7 +105,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ✅ Get single product
 router.get('/:id', async (req, res) => {
   try {
     const p = await Product.findById(req.params.id);
@@ -122,7 +115,6 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// ✅ Delete product
 router.delete('/:id', auth, isAdmin, async (req, res) => {
   try {
     await Product.findByIdAndDelete(req.params.id);
