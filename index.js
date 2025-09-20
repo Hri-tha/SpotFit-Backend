@@ -12,10 +12,23 @@ const paymentRoutes = require('./routes/payment');
 const app = express();
 
 // CORS Configuration - Update this!
+const allowedOrigins = [
+  'http://localhost:4200',                 // Angular dev
+  'https://spot-fit-frontend.vercel.app'   // Vercel deployed frontend
+];
+
 app.use(cors({
-  origin: 'http://localhost:4200', // Your Angular dev server
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
+
 
 // Middleware
 app.use(express.json());
