@@ -15,7 +15,7 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:4200',                 // Angular dev
   'https://spot-fit-frontend.vercel.app',   // Vercel deployed frontend
-  'https://spotfit.in/'
+  'https://spotfit.in'
 ];
 
 app.use(cors({
