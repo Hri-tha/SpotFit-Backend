@@ -11,25 +11,34 @@ const paymentRoutes = require('./routes/payment');
 
 const app = express();
 
-// CORS Configuration - Update this!
+// CORS Configuration - Fixed version
 const allowedOrigins = [
-  'http://localhost:4200',                 // Angular dev
+  'http://localhost:4200',                 // Angular dev (removed trailing slash)
   'https://spot-fit-frontend.vercel.app',   // Vercel deployed frontend
-  'https://spotfit.in/'
+  'https://spotfit.in'
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps, curl, Postman)
+    // Allow requests with no origin (like mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.indexOf(origin) !== -1) {
       return callback(null, true);
+    } else {
+      // For development, you might want to allow all origins
+      // return callback(null, true); // Uncomment for development
+      return callback(new Error('Not allowed by CORS'));
     }
-    return callback(new Error('Not allowed by CORS'));
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
+// Handle preflight requests
+// app.options('/*', cors());       // ✅ Works
 
 // Middleware
 app.use(express.json());

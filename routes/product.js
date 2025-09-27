@@ -19,7 +19,7 @@ const storage = multer.diskStorage({
     cb(null, Date.now() + path.extname(file.originalname));
   }
 });
-const upload = multer({ storage });
+const upload = multer({ storage, limits: { files: 10 } });
 
 function safeJsonParse(value, fallback) {
   try {
@@ -34,21 +34,37 @@ function safeJsonParse(value, fallback) {
   }
 }
 
-router.post('/', auth, isAdmin, upload.single('image'), async (req, res) => {
+// ✅ NEW: Upload multiple images
+router.post('/upload-multiple', auth, isAdmin, upload.array('images', 10), async (req, res) => {
   try {
-    const { title, description, price, category, featured, features, quantity, sizes, discount, type } = req.body;
+    const imageUrls = req.files.map(file => 
+      `${req.protocol}://${req.get('host')}/uploads/${file.filename}`
+    );
+    res.json({ imageUrls });
+  } catch (err) {
+    res.status(500).json({ message: 'Upload failed', error: err.message });
+  }
+});
 
-    const imageUrl = req.file
-      ? `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
-      : req.body.imageUrl;
+
+router.post('/', auth, isAdmin, upload.array('images', 10), async (req, res) => {
+  try {
+    const { title, description, price, category, featured, features, quantity, sizes, discount, type, heroBanner, bannerOrder } = req.body;
+
+    const imageUrls = req.files
+      ? req.files.map(file => `${req.protocol}://${req.get('host')}/uploads/${file.filename}`)
+      : req.body.imageUrl ? [req.body.imageUrl] : [];
 
     const product = new Product({
       title,
       description,
       price: Number(price) || 0,
       category,
-      imageUrl,
+      imageUrl: imageUrls[0] || '', // First image as main
+      images: imageUrls, // ✅ All images
       featured: featured === 'true' || featured === true,
+      heroBanner: heroBanner === 'true' || heroBanner === true, // ✅ Hero banner flag
+      bannerOrder: Number(bannerOrder) || 0, // ✅ Banner order
       features: safeJsonParse(features, []),
       quantity: Number(quantity) || 0,
       sizes: safeJsonParse(sizes, []),
@@ -61,6 +77,17 @@ router.post('/', auth, isAdmin, upload.single('image'), async (req, res) => {
   } catch (err) {
     console.error('❌ Error creating product:', err);
     res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+router.get('/banner/hero', async (req, res) => {
+  try {
+    const banners = await Product.find({ heroBanner: true })
+      .sort({ bannerOrder: 1, createdAt: -1 })
+      .select('title description imageUrl images');
+    res.json(banners);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
