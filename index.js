@@ -8,27 +8,24 @@ const path = require('path');
 const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/product');
 const paymentRoutes = require('./routes/payment');
+const delhiveryRoutes = require('./routes/delhivery');
+const orderRoutes = require('./routes/orders')
 
 const app = express();
 
 // CORS Configuration - Fixed version
 const allowedOrigins = [
-  'http://localhost:4200',                 // Angular dev (removed trailing slash)
-  'https://spot-fit-frontend.vercel.app',   // Vercel deployed frontend
+  'http://localhost:4200',
+  'https://spot-fit-frontend.vercel.app',
   'https://spotfit.in'
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
-    
-    // Check if origin is in allowed list
     if (allowedOrigins.indexOf(origin) !== -1) {
       return callback(null, true);
     } else {
-      // For development, you might want to allow all origins
-      // return callback(null, true); // Uncomment for development
       return callback(new Error('Not allowed by CORS'));
     }
   },
@@ -36,9 +33,6 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
-
-// Handle preflight requests
-// app.options('/*', cors());       // ✅ Works
 
 // Middleware
 app.use(express.json());
@@ -48,6 +42,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/delhivery', delhiveryRoutes);
+app.use('/api/orders', orderRoutes);
 
 // Test route to check if API is working
 app.get('/api/health', (req, res) => {
