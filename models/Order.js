@@ -51,6 +51,10 @@ const orderSchema = new mongoose.Schema({
     discountedPrice: Number,
     quantity: Number,
     size: String,
+    rated: {
+      type: Boolean,
+      default: false
+    },
     imageUrl: String
   }],
   
