@@ -1,4 +1,4 @@
-// models/Order.js
+// models/Order.js - Updated
 const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
@@ -21,8 +21,9 @@ const orderSchema = new mongoose.Schema({
     default: 'INR'
   },
   
-  // Customer details
+  // Customer details - UPDATED
   customer: {
+    userId: String, // Add this field
     name: String,
     email: String,
     phone: String
@@ -58,6 +59,12 @@ const orderSchema = new mongoose.Schema({
     imageUrl: String
   }],
   
+  // Payment method - ADD THIS
+  paymentMethod: {
+    type: String,
+    default: 'Online Payment'
+  },
+  
   // Shipping details
   shipping: {
     waybill: String,
@@ -72,7 +79,8 @@ const orderSchema = new mongoose.Schema({
     },
     trackingUrl: String,
     shipmentCreatedAt: Date,
-    deliveredAt: Date
+    deliveredAt: Date,
+    expectedDelivery: Date // ADD THIS
   },
   
   // Order status
@@ -96,6 +104,12 @@ const orderSchema = new mongoose.Schema({
 // Update the updatedAt field before saving
 orderSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
+  
+  // Set expected delivery date if not set (7 days from creation)
+  if (!this.shipping.expectedDelivery && this.createdAt) {
+    this.shipping.expectedDelivery = new Date(this.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+  }
+  
   next();
 });
 

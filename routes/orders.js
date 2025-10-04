@@ -265,4 +265,218 @@ router.put('/:orderId/status', async (req, res) => {
   }
 });
 
+// Add this route to your orders.js file
+
+// Get orders for current user
+router.get('/user/orders', async (req, res) => {
+  try {
+    // In a real app, you'd get user ID from auth middleware
+    // For now, we'll use a query parameter or return all orders
+    const { userId, email, phone } = req.query;
+    
+    console.log('📋 Fetching user orders for:', { userId, email, phone });
+
+    let query = {};
+    
+    // Build query based on available user identifiers
+    if (userId) {
+      query['customer.userId'] = userId;
+    } else if (email) {
+      query['customer.email'] = email;
+    } else if (phone) {
+      query['customer.phone'] = phone;
+    }
+    
+    // If no specific user identifier, return empty array
+    // In production, you should always have user authentication
+    if (Object.keys(query).length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          orders: [],
+          message: 'No user identifier provided'
+        }
+      });
+    }
+
+    const orders = await Order.find(query)
+      .sort({ createdAt: -1 })
+      .select('-__v') // Exclude version key
+      .lean();
+
+    console.log(`✅ Found ${orders.length} orders for user`);
+
+    res.json({
+      success: true,
+      data: {
+        orders: orders.map(order => ({
+          _id: order._id,
+          orderId: order.orderId,
+          userId: order.customer?.userId,
+          items: order.items,
+          totalAmount: order.amount,
+          status: order.status,
+          paymentStatus: order.status === 'paid' || order.status === 'shipped' || order.status === 'delivered' ? 'paid' : 'pending',
+          paymentMethod: 'Online Payment', // You can store this in your order model
+          shippingAddress: order.shippingAddress,
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt,
+          waybillNumber: order.shipping?.waybill,
+          trackingUrl: order.shipping?.trackingUrl,
+          expectedDelivery: order.shipping?.deliveredAt || 
+            (order.createdAt ? new Date(order.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000) : null) // 7 days from order date
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching user orders:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch user orders',
+      details: error.message
+    });
+  }
+});
+
+// Alternative: Get orders by user email (common use case)
+router.get('/user/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    
+    console.log('📋 Fetching orders for email:', email);
+
+    const orders = await Order.find({ 'customer.email': email })
+      .sort({ createdAt: -1 })
+      .select('-__v')
+      .lean();
+
+    console.log(`✅ Found ${orders.length} orders for email: ${email}`);
+
+    res.json({
+      success: true,
+      data: {
+        orders: orders.map(order => ({
+          _id: order._id,
+          orderId: order.orderId,
+          items: order.items,
+          totalAmount: order.amount,
+          status: order.status,
+          paymentStatus: order.status === 'paid' || order.status === 'shipped' || order.status === 'delivered' ? 'paid' : 'pending',
+          paymentMethod: 'Online Payment',
+          shippingAddress: order.shippingAddress,
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt,
+          waybillNumber: order.shipping?.waybill,
+          trackingUrl: order.shipping?.trackingUrl,
+          expectedDelivery: order.shipping?.deliveredAt || 
+            (order.createdAt ? new Date(order.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000) : null)
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching user orders by email:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch user orders',
+      details: error.message
+    });
+  }
+});
+
+// Add this temporary route to create a test order
+router.post('/test-order', async (req, res) => {
+  try {
+    const testOrder = new Order({
+      orderId: 'TEST_' + Date.now(),
+      paymentId: 'TEST_PAY_' + Date.now(),
+      amount: 1999,
+      customer: {
+        userId: 'test_user',
+        name: 'Test User',
+        email: 'test@example.com', // Use your test email
+        phone: '9876543210'
+      },
+      shippingAddress: {
+        fullName: 'Test User',
+        addressLine1: '123 Test Street',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        pincode: '400001',
+        phone: '9876543210'
+      },
+      items: [{
+        productId: 'test_product_1',
+        title: 'Test Fitness T-Shirt',
+        price: 1999,
+        discountedPrice: 1499,
+        quantity: 1,
+        size: 'M',
+        imageUrl: 'assets/test-product.jpg'
+      }],
+      status: 'paid',
+      shipping: {
+        waybill: 'TEST123456789',
+        status: 'in_transit',
+        trackingUrl: 'https://track.delhivery.com/#/track/TEST123456789',
+        expectedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) // 3 days from now
+      }
+    });
+
+    await testOrder.save();
+    
+    res.json({
+      success: true,
+      message: 'Test order created',
+      data: testOrder
+    });
+  } catch (error) {
+    console.error('Error creating test order:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create test order'
+    });
+  }
+});
+
+// Add this route to debug - see all orders in database
+router.get('/debug/all-orders', async (req, res) => {
+  try {
+    const orders = await Order.find({}).sort({ createdAt: -1 });
+    
+    console.log('📋 ALL ORDERS IN DATABASE:');
+    orders.forEach(order => {
+      console.log('Order:', {
+        orderId: order.orderId,
+        customer: order.customer,
+        email: order.customer?.email,
+        amount: order.amount,
+        status: order.status,
+        createdAt: order.createdAt
+      });
+    });
+
+    res.json({
+      success: true,
+      data: {
+        totalOrders: orders.length,
+        orders: orders.map(order => ({
+          orderId: order.orderId,
+          customer: order.customer,
+          email: order.customer?.email,
+          amount: order.amount,
+          status: order.status,
+          items: order.items,
+          createdAt: order.createdAt
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching all orders:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch orders'
+    });
+  }
+});
+
 module.exports = router;
