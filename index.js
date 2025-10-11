@@ -10,6 +10,7 @@ const productRoutes = require('./routes/product');
 const paymentRoutes = require('./routes/payment');
 const delhiveryRoutes = require('./routes/delhivery');
 const orderRoutes = require('./routes/orders');
+const shiprocketRoutes = require('./routes/shiprocket');
 
 const app = express();
 
@@ -47,6 +48,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/delhivery', delhiveryRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/shiprocket', shiprocketRoutes);
 
 // Test route to check if API is working
 app.get('/api/health', (req, res) => {

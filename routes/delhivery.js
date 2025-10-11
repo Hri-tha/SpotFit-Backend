@@ -1,4 +1,4 @@
-// routes/delhivery.js - UPDATED
+// routes/delhivery.js - FIXED WITH AUTO PICKUP
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
@@ -15,7 +15,7 @@ const addDelhiveryAuth = (req, res, next) => {
   next();
 };
 
-// Proxy for Delhivery PIN code serviceability check - FIXED
+// Proxy for Delhivery PIN code serviceability check
 router.get('/pin/:pincode', addDelhiveryAuth, async (req, res) => {
   try {
     const { pincode } = req.params;
@@ -27,7 +27,6 @@ router.get('/pin/:pincode', addDelhiveryAuth, async (req, res) => {
 
     console.log('📦 Raw Delhivery API Response:', response.data);
 
-    // Transform the response to match what frontend expects
     const transformedResponse = transformDelhiveryResponse(response.data, pincode);
     
     res.json(transformedResponse);
@@ -42,7 +41,6 @@ router.get('/pin/:pincode', addDelhiveryAuth, async (req, res) => {
 
 // Helper function to transform Delhivery response
 function transformDelhiveryResponse(apiResponse, pincode) {
-  // If API returns error or no data
   if (!apiResponse || apiResponse.success === false) {
     return {
       deliverable: false,
@@ -51,11 +49,8 @@ function transformDelhiveryResponse(apiResponse, pincode) {
     };
   }
 
-  // Check if we have delivery_codes array with data
   if (apiResponse.delivery_codes && apiResponse.delivery_codes.length > 0) {
     const postalCode = apiResponse.delivery_codes[0].postal_code;
-    
-    // Serviceable if prepaid or COD is available
     const isServiceable = postalCode.pre_paid === 'Y' || postalCode.cod === 'Y';
     
     return {
@@ -72,14 +67,12 @@ function transformDelhiveryResponse(apiResponse, pincode) {
       zone: postalCode.is_oda === 'N' ? 'Regular' : 'ODA',
       is_oda: postalCode.is_oda,
       reassign: postalCode.repl === 'Y',
-      forward: true, // Default
-      rto: true, // Default
-      // Include original data for debugging
+      forward: true,
+      rto: true,
       original_data: postalCode
     };
   }
 
-  // Default fallback
   return {
     deliverable: false,
     pin: pincode,
@@ -99,7 +92,6 @@ router.get('/pincodes/:pincode', addDelhiveryAuth, async (req, res) => {
 
     console.log('🔧 Serviceability API Response:', response.data);
     
-    // Transform this response too
     const transformedResponse = transformServiceabilityResponse(response.data, pincode);
     res.json(transformedResponse);
   } catch (error) {
@@ -112,12 +104,10 @@ router.get('/pincodes/:pincode', addDelhiveryAuth, async (req, res) => {
 
 // Helper for serviceability API response
 function transformServiceabilityResponse(apiResponse, pincode) {
-  // This API might have different structure, adjust as needed
   if (apiResponse && apiResponse.deliverable !== undefined) {
-    return apiResponse; // Already in correct format
+    return apiResponse;
   }
   
-  // Fallback transformation
   return {
     deliverable: false,
     pin: pincode,
@@ -125,7 +115,7 @@ function transformServiceabilityResponse(apiResponse, pincode) {
   };
 }
 
-// ... rest of your existing routes (track, shipment, charges) remain the same
+// Track shipment
 router.get('/track/:waybill', addDelhiveryAuth, async (req, res) => {
   try {
     const { waybill } = req.params;
@@ -144,15 +134,13 @@ router.get('/track/:waybill', addDelhiveryAuth, async (req, res) => {
   }
 });
 
-// Create shipment
-// routes/delhivery.js - FIXED SHIPMENT CREATION
+// 🔥 FIXED: Create shipment AND automatically add to pickup
 router.post('/shipment/create', addDelhiveryAuth, async (req, res) => {
   try {
     console.log('🚚 Creating Delhivery shipment with data:', JSON.stringify(req.body, null, 2));
     
-    // Add required format parameter and restructure data
     const delhiveryData = {
-      format: 'json', // Required parameter
+      format: 'json',
       data: JSON.stringify({
         pickups: [req.body.pickup_location],
         shipments: req.body.shipments
@@ -161,7 +149,8 @@ router.post('/shipment/create', addDelhiveryAuth, async (req, res) => {
 
     console.log('📦 Sending to Delhivery:', JSON.stringify(delhiveryData, null, 2));
     
-    const response = await axios.post(
+    // STEP 1: Create the shipment
+    const shipmentResponse = await axios.post(
       'https://track.delhivery.com/api/cmu/create.json',
       delhiveryData,
       {
@@ -173,9 +162,98 @@ router.post('/shipment/create', addDelhiveryAuth, async (req, res) => {
       }
     );
 
-    console.log('✅ Delhivery API Response:', response.data);
+    console.log('✅ Shipment Created:', shipmentResponse.data);
     
-    res.json(response.data);
+    // Extract waybill from response
+    let waybill = null;
+    if (shipmentResponse.data.packages && shipmentResponse.data.packages.length > 0) {
+      waybill = shipmentResponse.data.packages[0].waybill;
+    } else if (shipmentResponse.data.waybill) {
+      waybill = shipmentResponse.data.waybill;
+    }
+
+    // STEP 2: Automatically add to pickup if waybill exists
+    let pickupResponse = null;
+    if (waybill) {
+      try {
+        console.log('📦 Waybill generated:', waybill);
+        console.log('⏱️ Waiting 5 seconds for waybill to be fully registered...');
+        
+        // Wait for waybill to be fully registered in Delhivery system
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        // Calculate tomorrow's date for pickup
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const pickupDate = tomorrow.toISOString().split('T')[0];
+
+        console.log('📦 Step 1: Creating pickup request without waybill first...');
+
+        // STEP 2A: Create pickup request WITHOUT waybills first
+        const initialPickupData = {
+          pickup_location: req.body.pickup_location?.name || 'SpotFit',
+          pickup_date: pickupDate,
+          pickup_time: '14:00:00',
+          expected_package_count: 1
+          // NOTE: NO waybills in initial request
+        };
+
+        pickupResponse = await axios.post(
+          'https://track.delhivery.com/fm/request/new/',
+          initialPickupData,
+          req.delhiveryAuth
+        );
+
+        console.log('✅ Pickup Request Created (without waybill):', pickupResponse.data);
+        
+        if (pickupResponse.data.pickup_id) {
+          console.log('📦 Step 2: Now adding waybill to pickup via edit API...');
+          
+          // STEP 2B: Add waybill to existing pickup using EDIT endpoint
+          try {
+            // Wait another 2 seconds before adding waybill
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            const addWaybillResponse = await axios.post(
+              'https://track.delhivery.com/fm/request/edit/',
+              {
+                pickup_id: pickupResponse.data.pickup_id,
+                waybills: [waybill],
+                action: 'add'
+              },
+              req.delhiveryAuth
+            );
+
+            console.log('✅ Waybill added to pickup via edit:', addWaybillResponse.data);
+            console.log(`✅ Waybill ${waybill} successfully added to pickup ${pickupResponse.data.pickup_id}`);
+            
+            // Update pickupResponse with edit confirmation
+            pickupResponse.data.waybills_added = true;
+            pickupResponse.data.waybill = waybill;
+            
+          } catch (editError) {
+            console.error('⚠️ Failed to add waybill via edit API:', editError.response?.data || editError.message);
+            console.log('💡 Fallback: Will use manual "Add to Pickup" in Delhivery dashboard');
+          }
+        }
+        
+      } catch (pickupError) {
+        console.error('⚠️ Pickup request creation failed:', pickupError.response?.data || pickupError.message);
+        console.log('💡 Manual intervention required: Add waybill', waybill, 'to pickup manually');
+      }
+    }
+
+    // Return combined response
+    res.json({
+      success: true,
+      shipment: shipmentResponse.data,
+      pickup: pickupResponse ? pickupResponse.data : null,
+      waybill: waybill,
+      message: pickupResponse 
+        ? 'Shipment created and added to pickup successfully'
+        : 'Shipment created (pickup request pending)'
+    });
+
   } catch (error) {
     console.error('❌ Delhivery shipment creation error:', error.response?.data || error.message);
     
@@ -186,61 +264,6 @@ router.post('/shipment/create', addDelhiveryAuth, async (req, res) => {
     });
   }
 });
-// Test shipment creation endpoint
-// router.post('/shipment/test', addDelhiveryAuth, async (req, res) => {
-//   try {
-//     // Test with minimal data
-//     const testData = {
-//       "shipments": [
-//         {
-//           "name": "John Doe",
-//           "add": "123 Main Street",
-//           "pin": "560029",
-//           "city": "Bangalore",
-//           "state": "Karnataka",
-//           "country": "India",
-//           "phone": "9876543210",
-//           "order": "TEST_ORDER_123",
-//           "products_desc": "Test Product",
-//           "cod_amount": "0",
-//           "total_amount": "499",
-//           "quantity": "1"
-//         }
-//       ],
-//       "pickup_location": {
-//         "name": environment.delhivery.sellerName,
-//         "add": environment.delhivery.sellerAddress,
-//         "city": environment.delhivery.sellerCity,
-//         "pin_code": environment.delhivery.sellerPincode,
-//         "state": environment.delhivery.sellerState,
-//         "phone": environment.delhivery.sellerPhone,
-//         "country": "India"
-//       }
-//     };
-
-//     console.log('🧪 Testing shipment with data:', JSON.stringify(testData, null, 2));
-    
-//     const response = await axios.post(
-//       'https://track.delhivery.com/api/cmu/create.json',
-//       testData,
-//       req.delhiveryAuth
-//     );
-
-//     res.json({
-//       success: true,
-//       message: 'Test shipment created successfully',
-//       data: response.data
-//     });
-//   } catch (error) {
-//     console.error('❌ Test shipment failed:', error.response?.data || error.message);
-//     res.status(error.response?.status || 500).json({
-//       success: false,
-//       error: 'Test shipment failed',
-//       details: error.response?.data || error.message
-//     });
-//   }
-// });
-
 
 // Get shipping charges
 router.get('/charges', addDelhiveryAuth, async (req, res) => {
@@ -257,6 +280,198 @@ router.get('/charges', addDelhiveryAuth, async (req, res) => {
     console.error('Delhivery charges error:', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       error: 'Failed to fetch shipping charges'
+    });
+  }
+});
+
+// Create pickup request (manual - for when auto-pickup wasn't done)
+router.post('/pickup/request', addDelhiveryAuth, async (req, res) => {
+  try {
+    const { pickup_location, pickup_date, pickup_time, expected_package_count, waybills } = req.body;
+
+    console.log('📦 Creating pickup request:', { pickup_location, pickup_date, pickup_time, waybills });
+
+    // Calculate tomorrow's date if not provided
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const defaultPickupDate = tomorrow.toISOString().split('T')[0];
+
+    const pickupData = {
+      pickup_location: pickup_location || 'SpotFit',
+      pickup_date: pickup_date || defaultPickupDate,
+      pickup_time: pickup_time || '14:00:00',
+      expected_package_count: expected_package_count || (waybills?.length || 1),
+    };
+
+    // Include waybills if provided
+    if (waybills && Array.isArray(waybills) && waybills.length > 0) {
+      pickupData.waybills = waybills;
+    }
+
+    const response = await axios.post(
+      'https://track.delhivery.com/fm/request/new/',
+      pickupData,
+      req.delhiveryAuth
+    );
+
+    console.log('✅ Pickup request created:', response.data);
+
+    res.json({
+      success: true,
+      data: response.data,
+      message: waybills?.length
+        ? `${waybills.length} shipment(s) added to pickup successfully`
+        : 'Pickup request created successfully'
+    });
+  } catch (error) {
+    console.error('❌ Pickup request error:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      error: 'Failed to create pickup request',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Add specific waybills to pickup (for existing orders)
+router.post('/pickup/add-waybills', addDelhiveryAuth, async (req, res) => {
+  try {
+    const { waybills, pickup_date, pickup_time, pickup_id } = req.body;
+
+    if (!waybills || !Array.isArray(waybills) || waybills.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'waybills array is required'
+      });
+    }
+
+    console.log('📦 Adding waybills to pickup:', { waybills, pickup_id });
+
+    // If pickup_id is provided, use edit endpoint
+    if (pickup_id) {
+      console.log('📝 Using EDIT endpoint to add waybills to existing pickup:', pickup_id);
+      
+      const editResponse = await axios.post(
+        'https://track.delhivery.com/fm/request/edit/',
+        {
+          pickup_id: pickup_id,
+          waybills: waybills,
+          action: 'add'
+        },
+        req.delhiveryAuth
+      );
+
+      console.log('✅ Waybills added via edit:', editResponse.data);
+      
+      return res.json({
+        success: true,
+        data: editResponse.data,
+        message: `${waybills.length} waybills added to pickup ${pickup_id} successfully`
+      });
+    }
+
+    // Otherwise, create new pickup request
+    console.log('📦 Creating new pickup request for waybills');
+    
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const defaultPickupDate = tomorrow.toISOString().split('T')[0];
+
+    // Step 1: Create pickup WITHOUT waybills
+    const pickupData = {
+      pickup_location: 'SpotFit',
+      pickup_date: pickup_date || defaultPickupDate,
+      pickup_time: pickup_time || '14:00:00',
+      expected_package_count: waybills.length
+    };
+
+    const createResponse = await axios.post(
+      'https://track.delhivery.com/fm/request/new/',
+      pickupData,
+      req.delhiveryAuth
+    );
+
+    console.log('✅ Pickup created:', createResponse.data);
+
+    // Step 2: Add waybills to the newly created pickup
+    if (createResponse.data.pickup_id) {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+
+      try {
+        const editResponse = await axios.post(
+          'https://track.delhivery.com/fm/request/edit/',
+          {
+            pickup_id: createResponse.data.pickup_id,
+            waybills: waybills,
+            action: 'add'
+          },
+          req.delhiveryAuth
+        );
+
+        console.log('✅ Waybills added to new pickup:', editResponse.data);
+
+        return res.json({
+          success: true,
+          pickup: createResponse.data,
+          edit: editResponse.data,
+          message: `${waybills.length} waybills added to pickup ${createResponse.data.pickup_id} successfully`
+        });
+      } catch (editError) {
+        console.error('⚠️ Failed to add waybills:', editError.response?.data);
+        return res.json({
+          success: false,
+          pickup: createResponse.data,
+          error: 'Pickup created but failed to add waybills',
+          details: editError.response?.data
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: createResponse.data,
+      message: 'Pickup created, add waybills manually'
+    });
+
+  } catch (error) {
+    console.error('❌ Add to pickup error:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      error: 'Failed to add waybills to pickup',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Cancel shipment
+router.post('/shipment/cancel', addDelhiveryAuth, async (req, res) => {
+  try {
+    const { waybill } = req.body;
+
+    if (!waybill) {
+      return res.status(400).json({
+        success: false,
+        error: 'waybill is required'
+      });
+    }
+
+    const response = await axios.post(
+      'https://track.delhivery.com/api/p/edit',
+      { waybill, cancellation: true },
+      req.delhiveryAuth
+    );
+
+    res.json({
+      success: true,
+      data: response.data,
+      message: 'Shipment cancelled successfully'
+    });
+  } catch (error) {
+    console.error('Shipment cancellation error:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      success: false,
+      error: 'Failed to cancel shipment',
+      details: error.response?.data || error.message
     });
   }
 });
